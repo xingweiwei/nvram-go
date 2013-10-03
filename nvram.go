@@ -6,6 +6,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"flag"
 	"fmt"
 	"io"
@@ -43,6 +44,8 @@ func loadFile(path string) (*nvram, bool) {
 	defer f.Close()
 
 	n := newNvram()
+	n.path = path
+
 	// Create buffer reader.
 	buf := bufio.NewReader(f)
 
@@ -69,7 +72,6 @@ func loadFile(path string) (*nvram, bool) {
 			continue
 		case line[0] == '#' || line[0] == ';': // Comment
 			continue
-
 		default: // Other alternatives
 			i := strings.IndexAny(line, "=:")
 			if i > 0 {
@@ -90,8 +92,26 @@ func loadFile(path string) (*nvram, bool) {
 }
 
 func saveFile(n *nvram) bool {
-	//fmt.Println(os.Stderr, "Save file!")
-	os.Exit(2)
+	// Write configuration file by filename
+	var f *os.File
+	var err error
+	if f, err = os.Create(n.path); err != nil {
+		return false
+	}
+
+	// Data buffer
+	buf := bytes.NewBuffer(nil)
+	// Write sections
+	for _, k := range n.keyList {
+		s := fmt.Sprintf("%s=%s\n", k, n.data[k])
+		if _, err = buf.WriteString(s); err != nil {
+			return false
+		}
+	}
+	// Write to file
+	buf.WriteTo(f)
+	f.Sync()
+	f.Close()
 	return false
 }
 
@@ -115,14 +135,19 @@ func (this *nvram) Set(key, value string) bool {
 	//fmt.Printf("%s=%s", key, value)
 	var isExist bool = false
 	this.data[key] = value
+	i := 0
 	for _, k := range this.keyList {
+
 		if k == key {
 			isExist = true
 			break
 		}
+		i++
 	}
 	if isExist == false {
 		this.keyList = append(this.keyList, key)
+	} else if value == "" {
+		this.keyList = append(this.keyList[:i], this.keyList[i+1:]...)
 	}
 	return true
 }
@@ -155,12 +180,21 @@ func main() {
 
 	switch args[0] {
 	case "set":
-		if len(args) < 3 {
+		if len(args) != 2 {
+			usage()
 			return
 		}
-		nvram.Set(args[1], args[2])
+
+		line := args[1]
+		i := strings.IndexAny(line, "=:")
+		if i > 0 {
+			key := strings.TrimSpace(line[0:i])
+			value := strings.TrimSpace(line[i+1:])
+			nvram.Set(key, value)
+		}
 	case "get":
-		if len(args) < 2 {
+		if len(args) != 2 {
+			usage()
 			return
 		}
 		value := nvram.Get(args[1])
@@ -173,7 +207,7 @@ func main() {
 	return
 }
 
-var usageTemplate = "nvram show\nnvram set key value\nnvram get key\n"
+var usageTemplate = "nvram show\nnvram set key=[value]\nnvram get key\n"
 
 func usage() {
 	fmt.Fprintf(os.Stderr, usageTemplate)
