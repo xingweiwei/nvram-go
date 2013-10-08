@@ -21,10 +21,9 @@ const (
 )
 
 type nvram struct {
-	lock    *sync.RWMutex
-	path    string
-	keyList []string
-	data    map[string]string
+	lock *sync.RWMutex
+	path string
+	data map[string]string
 }
 
 func newNvram() *nvram {
@@ -102,8 +101,13 @@ func saveFile(n *nvram) bool {
 	// Data buffer
 	buf := bytes.NewBuffer(nil)
 	// Write sections
-	for _, k := range n.keyList {
-		s := fmt.Sprintf("%s=%s\n", k, n.data[k])
+	for k, v := range n.data {
+		s := fmt.Sprintf("%s=%s\n", k, v)
+
+		if v == "" {
+			continue
+		}
+
 		if _, err = buf.WriteString(s); err != nil {
 			return false
 		}
@@ -116,14 +120,19 @@ func saveFile(n *nvram) bool {
 }
 
 func (this *nvram) Show() string {
-	for _, k := range this.keyList {
-		value := this.data[k]
-		fmt.Printf("%s=%s\n", k, value)
+	this.lock.Lock()
+	defer this.lock.Unlock()
+
+	for k, v := range this.data {
+		fmt.Printf("%s=%s\n", k, v)
 	}
 	return "ERROR"
 }
 
 func (this *nvram) Get(key string) string {
+	this.lock.Lock()
+	defer this.lock.Unlock()
+
 	if _, ok := this.data[key]; ok {
 		return this.data[key]
 	}
@@ -132,28 +141,22 @@ func (this *nvram) Get(key string) string {
 }
 
 func (this *nvram) Set(key, value string) bool {
-	//fmt.Printf("%s=%s", key, value)
-	var isExist bool = false
-	this.data[key] = value
-	i := 0
-	for _, k := range this.keyList {
+	this.lock.Lock()
+	defer this.lock.Unlock()
 
-		if k == key {
-			isExist = true
-			break
-		}
-		i++
-	}
-	if isExist == false {
-		this.keyList = append(this.keyList, key)
-	} else if value == "" {
-		this.keyList = append(this.keyList[:i], this.keyList[i+1:]...)
-	}
+	this.data[key] = value
 	return true
 }
 
 func init() {
 
+}
+
+var usageTemplate = "nvram show\nnvram set key=[value]\nnvram get key\n"
+
+func usage() {
+	fmt.Fprintf(os.Stderr, usageTemplate)
+	os.Exit(2)
 }
 
 func main() {
@@ -205,11 +208,4 @@ func main() {
 		usage()
 	}
 	return
-}
-
-var usageTemplate = "nvram show\nnvram set key=[value]\nnvram get key\n"
-
-func usage() {
-	fmt.Fprintf(os.Stderr, usageTemplate)
-	os.Exit(2)
 }
